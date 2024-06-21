@@ -123,7 +123,6 @@ def main():
             else: 
                 print(f"Directory '{d}' already exists.") 
                 
-    sema = threading.Semaphore(value=MAX_THREADS)
     label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") # Customized label using date time
     ### log in to get API Key
     print("Logging in...\n")
