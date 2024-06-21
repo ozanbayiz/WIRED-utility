@@ -9,26 +9,32 @@ import threading
 import datetime
 import os
 import pandas as pd
+from datetime import date
+from dateutil.relativedelta import relativedelta
 import warnings
 warnings.filterwarnings("ignore")
 
 USERNAME = "ozanbayiz"
 SERVICE_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
-TOKEN = "AvChvofuZv5G1By8khf94@XeBB8OtRNJ!_o3BQms4M7ZudZdPGF9L1PypoUwyFme"
-AUTH_PAYLOAD = {"username": USERNAME, "token": TOKEN}
 
 DATA_DIR = 'data'
-UTILS_DIR = 'utils' 
-BAND_DIRS = ['data/B5', 'data/B7']
-DIRS = [DATA_DIR, UTILS_DIR] + BAND_DIRS
-MAX_THREADS = 5 # Threads count for downloads
+DIRS = ['data', 'data/B5', 'data/B7']
+
+#exported from EarthExplorer scene search
+CA_SHAPE = {"type":"Polygon","coordinates":[[[-124.212020874,41.999721527],[-120.000305176,41.995319367],[-120.000946045,39.000530242],[-114.632873535,35.00207901],[-114.129486084,34.267208099],[-114.724243164,33.404582977], [-114.526489258,32.757965088],[-117.125434876,32.530426025],[-117.475082398,33.303565979],[-118.522705078,34.029914856],[-120.639457703,34.565116883],[-120.640052796,35.135974884],[-121.904922485,36.307968139],[-121.772270203,36.815425873],[-122.521766663,37.53420639],[-123.02445221,37.994209289],[-123.729194641,38.91916275],[-123.851020813,39.828338623],[-124.411186219,40.436016083],[-124.088340759,40.831844329],[-124.212020874,41.999721527]]]}
+END_DATE = str(date.today())
+START_DATE = str(date.today() - relativedelta(days=14))
+CLOUD_COVER_MAX = 20
 
 FILE_TYPE = 'band'
 BAND_NAMES = {'SR_B5', 'SR_B7'}
 DATASET_NAME = 'landsat_ot_c2_l2'
 FILE_GROUP_IDS = {"ls_c2l2_sr_band"}
+
+MAX_THREADS = 5 #
 sema = threading.Semaphore(value=MAX_THREADS)
 
+#taken directly from M2M example script
 def sendRequest(url, data, apiKey = None, exitIfNoResponse = True):
     """
     Send a request to an M2M endpoint and returns the parsed JSON response.
@@ -100,8 +106,13 @@ def downloadFile(url):
         sema.release()
         runDownload(threads, url)
         
+def get_env_data_as_dict(path: str) -> dict:
+    with open(path, 'r') as f:
+       return dict(tuple(line.replace('\n', '').split('=')) for line
+                in f.readlines() if not line.startswith('#'))
+
 def main():
-    #create directories as needed
+    ### create directories as needed
     for d in DIRS:
             if not os.path.exists(d): 
                 try: 
@@ -111,35 +122,20 @@ def main():
                     print(f"Error creating directory '{d}': {e}") 
             else: 
                 print(f"Directory '{d}' already exists.") 
-    ## create label / threads
-    ####
+                
     sema = threading.Semaphore(value=MAX_THREADS)
     label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") # Customized label using date time
-    threads = []
-
-    ## login to get API Key
-    ####
+    ### log in to get API Key
     print("Logging in...\n")
+    ENV_VARS = get_env_data_as_dict('.env')
+    TOKEN = ENV_VARS['API_TOKEN']
+    AUTH_PAYLOAD = {"username": USERNAME, "token": TOKEN}
     apiKey = sendRequest(SERVICE_URL + "login-token", AUTH_PAYLOAD)
     print("API Key: " + apiKey + "\n")
-
-    ## create filters
-    ####
-    #create spatial filter
-    
-    #
-    path_to_CA_geojson = "./utils/California_State_Boundary.geojson"
-    with open(path_to_CA_geojson) as f:
-        gj = geojson.load(f)
-    geo = gj['features'][0]['geometry']
-    mp = geojson.MultiPolygon(geo)
-    spatialFilter =  {'filterType' : 'geojson',
-                      'geoJson': mp}
-    #create Acquisition Filter (date range)
-    acquisitionFilter = {'start' : '2024-06-04', 'end' : '2024-06-05'}
-    #create Cloud Cover Filter (may become more relevant later)
-    cloudCoverFilter = {'min' : 0, 'max' : 20}
-    #final payload
+    ### filter scenes
+    spatialFilter =  {'filterType':'geojson', 'geoJson':CA_SHAPE}
+    acquisitionFilter = {'start':START_DATE, 'end':END_DATE}
+    cloudCoverFilter = {'min':0, 'max':CLOUD_COVER_MAX}
     search_payload = {
         'datasetName' : DATASET_NAME,
         'sceneFilter' : {
@@ -148,58 +144,67 @@ def main():
             'cloudCoverFilter' : cloudCoverFilter
         }
     }
-    
-    ## perform search
-    ####
-    #get scenes
     scenes = sendRequest(SERVICE_URL + "scene-search", search_payload, apiKey)
-    #create list of entity ids
     idField = 'entityId'
-    entityIds = []
-    for result in scenes['results']:
-         # Add this scene to the list I would like to download if bulk is available
-        if result['options']['bulk'] == True:
-            entityIds.append(result[idField])
-    listId = f"temp_{DATASET_NAME}_list" # customized list id
+    ### get most recent entityId for each path/row
+    entity_df = pd.DataFrame([[result['publishDate'], 
+                               result['displayId'].split("_")[2], 
+                               result['entityId']] 
+                              for result in scenes['results'] 
+                              if result['options']['bulk']], 
+                             columns=['date', 'path/row', idField])
+    entity_df_grouped = (entity_df
+        .sort_values(by='date')
+        .groupby('path/row')
+        .agg(lambda sd: sd.iloc[0]))
+    entityIds = list(entity_df_grouped[idField]) 
+    listId = f"temp_{DATASET_NAME}_list"
     scn_list_add_payload = {
         "listId": listId,
         'idField' : idField,
         "entityIds": entityIds,
         "datasetName": DATASET_NAME
     }
+    ### add to scene list
     count = sendRequest(SERVICE_URL + "scene-list-add", scn_list_add_payload, apiKey) 
+    print(f"{count} scenes added to list")
     download_opt_payload = {
         "listId": listId,
         "datasetName": DATASET_NAME
     }
-    download_opt_payload['includeSecondaryFileGroups'] = True
     products = sendRequest(SERVICE_URL + "download-options", download_opt_payload, apiKey)
-    filegroups = sendRequest(SERVICE_URL + "dataset-file-groups", {'datasetName' : DATASET_NAME}, apiKey)
-    
-    # Select products
+    ### Select products
     print("Selecting products...")
     downloads = []
+    threads = []
     print("    Selecting band files...")
     for product in products:  
         if product["secondaryDownloads"] is not None and len(product["secondaryDownloads"]) > 0:
             for secondaryDownload in product["secondaryDownloads"]:
                 for bandName in BAND_NAMES:
                     if secondaryDownload["bulkAvailable"] and bandName in secondaryDownload['displayId']:
-                        downloads.append({"entityId":secondaryDownload["entityId"], "productId":secondaryDownload["id"]})
+                        downloads.append({"entityId":secondaryDownload["entityId"], "productId":secondaryDownload["id"]})          
+    ### get entityIds of most recent download for each path/row                            
+    downloads_df = pd.DataFrame(downloads)
+    downloads_df[['path/row', 'date', 'band']] = downloads_df['entityId'].str.extract(r".{15}(\d{6}).{10}(\d{8}).{11}(\d)", expand=True)
+    grouped_downloads_df = (downloads_df
+                            .sort_values('date')
+                            .groupby(by=['path/row', 'band'])
+                            .agg(lambda sd: sd.iloc[0])
+                            .drop(columns=['date']))
+    downloads_filtered = grouped_downloads_df.to_dict('records')
     download_req2_payload = {
-        "downloads": downloads,
+        "downloads": downloads_filtered,
         "label": label
     }
-
-    ## send download request
-    ####
+    ### send download request
     print(f"Sending download request ...")
     download_request_results = sendRequest(SERVICE_URL + "download-request", download_req2_payload, apiKey)
     print(f"Done sending download request") 
     if len(download_request_results['newRecords']) == 0 and len(download_request_results['duplicateProducts']) == 0:
         print('No records returned, please update your scenes or scene-search filter')
-        sys.exit()
-    # Attempt the download URLs
+        sys.exit() 
+    ### attempt the download URLs
     for result in download_request_results['availableDownloads']:       
         print(f"Get download url: {result['url']}\n" )
         runDownload(threads, result['url'])
@@ -220,7 +225,6 @@ def main():
                     preparingDownloadIds.remove(result['downloadId'])
                     runDownload(threads, result['url'])
                     print(f"       {result['url']}\n" )
-                
             for result in download_retrieve_results['requested']:   
                 if result['downloadId'] in preparingDownloadIds:
                     preparingDownloadIds.remove(result['downloadId'])
@@ -238,13 +242,11 @@ def main():
                         preparingDownloadIds.remove(result['downloadId'])
                         print(f"    Get download url: {result['url']}\n" )
                         runDownload(threads, result['url'])
-
-    #initiate download
+    
+    ### initiate download
     print("\nDownloading files... Please do not close the program\n")
     for thread in threads:
-        thread.join()        
-
+        thread.join()  
+        
 if __name__ == "__main__":
     main()
-
-
