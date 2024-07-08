@@ -8,17 +8,19 @@ import re
 import threading
 import datetime
 import os
+import os.path
 import pandas as pd
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import warnings
 warnings.filterwarnings("ignore")
+from tqdm import tqdm
 
 USERNAME = "ozanbayiz"
 SERVICE_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 
-DATA_DIR = 'data'
-DIRS = ['data', 'data/B5', 'data/B7']
+DATA_DIR = '/tmp/data/'
+DIRS = [DATA_DIR, DATA_DIR + 'B5/', DATA_DIR + 'B7/']
 
 #exported from EarthExplorer scene search
 CA_SHAPE = {"type":"Polygon","coordinates":[[[-124.212020874,41.999721527],[-120.000305176,41.995319367],[-120.000946045,39.000530242],[-114.632873535,35.00207901],[-114.129486084,34.267208099],[-114.724243164,33.404582977], [-114.526489258,32.757965088],[-117.125434876,32.530426025],[-117.475082398,33.303565979],[-118.522705078,34.029914856],[-120.639457703,34.565116883],[-120.640052796,35.135974884],[-121.904922485,36.307968139],[-121.772270203,36.815425873],[-122.521766663,37.53420639],[-123.02445221,37.994209289],[-123.729194641,38.91916275],[-123.851020813,39.828338623],[-124.411186219,40.436016083],[-124.088340759,40.831844329],[-124.212020874,41.999721527]]]}
@@ -97,9 +99,10 @@ def downloadFile(url):
         response = requests.get(url, stream=True)
         disposition = response.headers['content-disposition']
         filename = re.findall("filename=(.+)", disposition)[0].strip("\"")
-        folder = "/" + filename[-6:-4] + "/"
-        print(f"    Downloading: {filename}...")
-        open(os.path.join(DATA_DIR + folder, filename), 'wb').write(response.content)
+        folder = filename[-6:-4] + "/"
+        #print(f"\r    Downloading: {filename}...", flush=True)
+        if not os.path.isfile(DATA_DIR+folder+filename):
+            open(os.path.join(DATA_DIR + folder, filename), 'wb').write(response.content)
         sema.release()
     except Exception as e:
         print(f"\nFailed to download from {url}. Will try to re-download.")
@@ -205,7 +208,7 @@ def main():
         sys.exit() 
     ### attempt the download URLs
     for result in download_request_results['availableDownloads']:       
-        print(f"Get download url: {result['url']}\n" )
+        #print(f"Get download url: {result['url']}\n" )
         runDownload(threads, result['url'])
         
     preparingDownloadCount = len(download_request_results['preparingDownloads'])
@@ -239,13 +242,17 @@ def main():
                 for result in download_retrieve_results['available']:                            
                     if result['downloadId'] in preparingDownloadIds:
                         preparingDownloadIds.remove(result['downloadId'])
-                        print(f"    Get download url: {result['url']}\n" )
+                        #print(f"    Get download url: {result['url']}\n" )
                         runDownload(threads, result['url'])
     
     ### initiate download
-    print("\nDownloading files... Please do not close the program\n")
-    for thread in threads:
+    print("\nDownloading files...")
+    for thread in tqdm(threads):
         thread.join()  
         
 if __name__ == "__main__":
+    start = time.perf_counter()
     main()
+    end = time.perf_counter()
+    print(f'\nFinished in {round(end - start, 2)} second(s)')
+    print('with love, from ozan\n')
