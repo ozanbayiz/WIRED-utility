@@ -21,12 +21,10 @@ SERVICE_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 
 #exported from EarthExplorer scene search
 CA_SHAPE = {"type":"Polygon","coordinates":[[[-124.212020874,41.999721527],[-120.000305176,41.995319367],[-120.000946045,39.000530242],[-114.632873535,35.00207901],[-114.129486084,34.267208099],[-114.724243164,33.404582977], [-114.526489258,32.757965088],[-117.125434876,32.530426025],[-117.475082398,33.303565979],[-118.522705078,34.029914856],[-120.639457703,34.565116883],[-120.640052796,35.135974884],[-121.904922485,36.307968139],[-121.772270203,36.815425873],[-122.521766663,37.53420639],[-123.02445221,37.994209289],[-123.729194641,38.91916275],[-123.851020813,39.828338623],[-124.411186219,40.436016083],[-124.088340759,40.831844329],[-124.212020874,41.999721527]]]}
-END_DATE = str(date.today())
-START_DATE = str(date.today() - relativedelta(days=14))
+
 CLOUD_COVER_MAX = 20
 
 FILE_TYPE = 'band'
-BAND_NAMES = {'SR_B5', 'SR_B7'}
 DATASET_NAME = 'landsat_ot_c2_l2'
 FILE_GROUP_IDS = {"ls_c2l2_sr_band"}
 
@@ -96,7 +94,7 @@ def downloadFile(url):
         response = requests.get(url, stream=True)
         disposition = response.headers['content-disposition']
         filename = re.findall("filename=(.+)", disposition)[0].strip("\"")
-        folder = filename[-6:-4] + "/"
+        folder = filename[-9:-4] + f"_{YEAR}/"
         if not os.path.isfile(DATA_DIR+folder+filename):
             open(os.path.join(DATA_DIR + folder, filename), 'wb').write(response.content)
         sema.release()
@@ -112,9 +110,15 @@ def get_env_data_as_dict(path: str) -> dict:
        return dict(tuple(line.replace('\n', '').split('=')) for line
                 in f.readlines() if not line.startswith('#'))
 
-def download_raw_data(data_dir):
+def download_raw_data(data_dir, band_names, year):
     global DATA_DIR
     DATA_DIR = data_dir
+    global YEAR
+    YEAR = year
+    BAND_NAMES = band_names
+    start_date = str(datetime.datetime(year, 4, 15))
+    end_date = str(datetime.datetime(year, 5, 15))
+    
     label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") # Customized label using date time
     ### log in to get API Key
     print("\nLogging in ...", end=" ")
@@ -126,7 +130,7 @@ def download_raw_data(data_dir):
     print("API Key: " + apiKey + "\n")
     ### filter scenes
     spatialFilter =  {'filterType':'geojson', 'geoJson':CA_SHAPE}
-    acquisitionFilter = {'start':START_DATE, 'end':END_DATE}
+    acquisitionFilter = {'start':start_date, 'end':end_date}
     cloudCoverFilter = {'min':0, 'max':CLOUD_COVER_MAX}
     search_payload = {
         'datasetName' : DATASET_NAME,
@@ -179,6 +183,8 @@ def download_raw_data(data_dir):
     ### get entityIds of most recent download for each path/row                            
     downloads_df = pd.DataFrame(downloads)
     downloads_df[['path/row', 'date', 'band']] = downloads_df['entityId'].str.extract(r".{15}(\d{6}).{10}(\d{8}).{11}(\d)", expand=True)
+    downloads_df['year'] = downloads_df['date'].str[:4].astype(int)
+    downloads_df = downloads_df[downloads_df['year'] == year]
     grouped_downloads_df = (downloads_df
                             .sort_values('date')
                             .groupby(by=['path/row', 'band'])
@@ -239,14 +245,3 @@ def download_raw_data(data_dir):
     print("\nDownloading files...")
     for thread in tqdm(threads):
         thread.join()
-
-    return data_dir+'B5/', data_dir+'B7/' 
-
-"""
-if __name__ == "__main__":
-    start = time.perf_counter()
-    main()
-    end = time.perf_counter()
-    print(f'\nFinished in {round(end - start, 2)} second(s)')
-    print('with love, from ozan\n')
-    """

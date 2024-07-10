@@ -71,10 +71,8 @@ def array2raster(array, geoTransform, projection, filename, resample=True):
         dtype = gdal.GDT_Int16
     else:
         dtype = gdal.GDT_Float32
-    
     pixels_x = array.shape[1]
     pixels_y = array.shape[0]
-    
     driver = gdal.GetDriverByName('GTiff')
     dataset = driver.Create(
         filename,
@@ -180,7 +178,6 @@ def main():
     rasters = glob.glob(REPROJ_DIR + "*.TIF")
     gdal.Warp(NBR_RASTER_MOSAIC, rasters, format='GTiff', resampleAlg='bilinear', options=['-wo', 'NUM_THREADS=ALL_CPUS' '-multi', '-co', 'COMPRESS=ZSTD', ])
     
-
 if __name__ == "__main__":
     start = time.perf_counter()
     main()
