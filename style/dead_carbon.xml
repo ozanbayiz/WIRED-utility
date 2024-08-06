@@ -11,7 +11,7 @@
               <sld:ColorMapEntry color=“#285C1E" quantity=“0.0”/>
               <sld:ColorMapEntry color=“#CBD286” quantity="187.726"/>
               <sld:ColorMapEntry color=“#712818" quantity=“375.452”/>
-              <sld:ColorMapEntry color=“#FFFFFF” opacity=“0" quantity=“15” label=“nodata”/>
+              <sld:ColorMapEntry color=“#FFFFFF” opacity=“0" quantity=“0.0” label=“nodata”/>
             </sld:ColorMap>
             <sld:ContrastEnhancement/>
           </sld:RasterSymbolizer>
