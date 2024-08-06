@@ -8,9 +8,9 @@
         <sld:Rule>
           <sld:RasterSymbolizer>
             <sld:ColorMap>
-              <sld:ColorMapEntry color=“#712818" quantity=“375.452” label=“0.0"/>
-              <sld:ColorMapEntry color=“#CBD286” quantity="187.726" label=“1.8”/>
-              <sld:ColorMapEntry color=“#285C1E" quantity=“0.0” label=“3.5"/>
+              <sld:ColorMapEntry color=“#285C1E" quantity=“0.0”/>
+              <sld:ColorMapEntry color=“#CBD286” quantity="187.726"/>
+              <sld:ColorMapEntry color=“#712818" quantity=“375.452”/>
               <sld:ColorMapEntry color=“#FFFFFF” opacity=“0" quantity=“15” label=“nodata”/>
             </sld:ColorMap>
             <sld:ContrastEnhancement/>
@@ -19,4 +19,4 @@
       </sld:FeatureTypeStyle>
     </sld:UserStyle>
   </sld:NamedLayer>
-</sld:StyledLayerDescriptor>
+</sld:StyledLayerDescriptor>`
